@@ -252,7 +252,7 @@ class MaskRCNN(FasterRCNN):
             self.roi_heads_stage2.mask_score_predictor = MaskRCNNScorePredictor(mask_predictor_in_channels)
             self.roi_heads_stage2.first_stage_scoring = first_stage_scoring
             self.roi_heads_stage2.second_stage_scoring = second_stage_scoring
-            
+        
         self.projection = GroupingLayer(roiAlign=mask_roi_pool, delta=delta)
 
 

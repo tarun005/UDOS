@@ -214,7 +214,7 @@ class FasterRCNN(GeneralizedRCNN):
         resolution = box_roi_pool.output_size[0]
         representation_size = 1024 ## 256 for config 5
 
-        box_head = TwoMLPHead_config1(
+        box_head = TwoMLPHead(
             out_channels * resolution ** 2,
             representation_size)
 
@@ -231,10 +231,8 @@ class FasterRCNN(GeneralizedRCNN):
             bbox_reg_weights,
             box_score_thresh, box_nms_thresh, box_detections_per_img)
         
-        import pdb; pdb. set_trace()
-        
         if not shared:
-            box_head_2 = TwoMLPHead_config1(
+            box_head_2 = TwoMLPHead(
                 out_channels * resolution ** 2,
                 representation_size)
             box_predictor_2 = FastRCNNPredictor(
@@ -260,7 +258,7 @@ class FasterRCNN(GeneralizedRCNN):
         super(FasterRCNN, self).__init__(backbone, rpn, roi_heads, transform, roi_heads_stage2=roi_heads_stage2)
 
 
-class TwoMLPHead_config1(nn.Module):
+class TwoMLPHead(nn.Module):
     """
     Standard heads for FPN-based models
 
@@ -288,126 +286,6 @@ class TwoMLPHead_config1(nn.Module):
         # x_2 = F.relu(self.fc7_score(x_2))
 
         return x#, x_2
-
-class TwoMLPHead_config2(nn.Module):
-    """
-    Standard heads for FPN-based models
-
-    Args:
-        in_channels (int): number of input channels
-        representation_size (int): size of the intermediate representation
-    """
-
-    def __init__(self, in_channels, representation_size):
-        super().__init__()
-
-        self.fc6 = nn.Linear(in_channels, representation_size)
-        self.fc7 = nn.Linear(representation_size, representation_size)
-
-        self.fc6_score = nn.Linear(representation_size, representation_size)
-        self.fc7_score = nn.Linear(representation_size, representation_size)
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-
-        x = F.relu(self.fc6(x))
-        x = F.relu(self.fc7(x))
-
-        x_2 = F.relu(self.fc6_score(x))
-        x_2 = F.relu(self.fc7_score(x_2))
-
-        return x, x_2
-
-class TwoMLPHead_config3(nn.Module):
-    """
-    Standard heads for FPN-based models
-
-    Args:
-        in_channels (int): number of input channels
-        representation_size (int): size of the intermediate representation
-    """
-
-    def __init__(self, in_channels, representation_size):
-        super().__init__()
-
-        self.fc6 = nn.Linear(in_channels, representation_size)
-        self.fc7 = nn.Linear(representation_size, representation_size)
-
-        self.fc6_score = nn.Linear(in_channels, representation_size)
-        self.fc7_score = nn.Linear(representation_size, representation_size)
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-
-        x_1 = F.relu(self.fc6(x))
-        x_1 = F.relu(self.fc7(x_1))
-
-        x_2 = F.relu(self.fc6_score(x))
-        x_2 = F.relu(self.fc7_score(x_2))
-
-        return x_1, x_2
-
-class TwoMLPHead_config4(nn.Module):
-    """
-    Standard heads for FPN-based models
-
-    Args:
-        in_channels (int): number of input channels
-        representation_size (int): size of the intermediate representation
-    """
-
-    def __init__(self, in_channels, representation_size):
-        super().__init__()
-
-        self.fc6 = nn.Linear(in_channels, representation_size)
-        self.fc7 = nn.Linear(representation_size, representation_size)
-
-        self.fc6_score = nn.Linear(representation_size, representation_size)
-        self.fc7_score = nn.Linear(representation_size, representation_size)
-        self.fc8_score = nn.Linear(representation_size, representation_size)
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-
-        x = F.relu(self.fc6(x))
-        x = F.relu(self.fc7(x))
-
-        x_2 = F.relu(self.fc6_score(x))
-        x_2 = F.relu(self.fc7_score(x_2))
-        x_2 = F.relu(self.fc8_score(x_2))
-
-        return x, x_2
-
-class TwoMLPHead_config6(nn.Module):
-    """
-    Standard heads for FPN-based models
-
-    Args:
-        in_channels (int): number of input channels
-        representation_size (int): size of the intermediate representation
-    """
-
-    def __init__(self, in_channels, representation_size):
-        super().__init__()
-
-        self.fc6 = nn.Linear(in_channels, representation_size)
-        self.fc7 = nn.Linear(representation_size, representation_size)
-
-        self.fc6_score = nn.Linear(in_channels, representation_size)
-        self.fc7_score = nn.Linear(representation_size, representation_size)
-        self.fc8_score = nn.Linear(representation_size, representation_size)
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-
-        x_1 = F.relu(self.fc6(x))
-        x_1 = F.relu(self.fc7(x_1))
-
-        x_2 = F.relu(self.fc6_score(x))
-        x_2 = F.relu(self.fc7_score(x_2))
-        x_2 = F.relu(self.fc8_score(x_2))
-
-        return x_1, x_2
 
 class FastRCNNPredictor(nn.Module):
     """

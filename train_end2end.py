@@ -110,7 +110,7 @@ def get_args_parser(add_help=True):
     parser.add_argument('--lr-gamma', default=0.1, type=float,
                         help='decrease lr by a factor of lr-gamma (multisteplr scheduler only)')
     parser.add_argument('--print-freq', default=500, type=int, help='print frequency')
-    parser.add_argument('--output-dir', default='.', help='path where to save')
+    parser.add_argument('--output-dir', default='UDOS/', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, help='start epoch')
     parser.add_argument('--aspect-ratio-group-factor', default=3, type=int)
@@ -127,7 +127,7 @@ def get_args_parser(add_help=True):
                                                 choices=["all", "voc", "coco"])
     parser.add_argument('--delta', type=int, default=15)
     # parser.add_argument('--thres', type=float, default=0.5)
-    # parser.add_argument('--load_model', default='')
+    parser.add_argument('--load_model', default='')
     # parser.add_argument('--test_niter', type=int)
     parser.add_argument('--lambda_2' , type=float)
     parser.add_argument('--lambda_3' , type=float)
@@ -248,7 +248,7 @@ def train(args):
         image_set = "train"
 
     if not args.test_only:
-        dataset = get_dataset(args.dataset, image_set, get_transform(True, args.data_augmentation),
+        dataset = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),
                                         args.data_path, args.toBinary, subset=args.data_split_train, spp=args.spp)
         
         if args.toBinary:
@@ -292,7 +292,6 @@ def train(args):
         optimizer.load_state_dict(checkpoint['optimizer'])
         args.start_epoch = checkpoint["epoch"] + 1
 
-
     if args.load_model:
         checkpoint = torch.load(args.load_model, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
@@ -318,17 +317,13 @@ def train(args):
                 'epoch': epoch
             }
 
-            if 1:#epoch in [4,6,8]:
-                utils.save_on_master(
-                    checkpoint,
-                    os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
+            utils.save_on_master(
+                checkpoint,
+                os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
 
             utils.save_on_master(
                 checkpoint,
                 os.path.join(args.output_dir, 'checkpoint.pth'))
-
-        # if epoch > 4 or epoch == args.epochs-1:
-        #     test(args, model)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -367,8 +362,5 @@ def test(args, model):
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
     train(args)
-    # if args.test_only:
-    #     assert args.resume is not None
-    #     test(args)
-    # else:
-    #     train(args)
+
+# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train_end2end.py --dataset uvo --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --output-dir ~/OpenWorldSegmentation/COCO_models/models/all2all_mcg --num-classes 2 --lr 0.02 --b 2 --data-split-train all --data-split-test all --toBinary --lambda_2 0. --lambda_3 3. --first_stage_scoring 1 --second_stage_scoring 1 --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/UVOdataset --test-only --detections 300

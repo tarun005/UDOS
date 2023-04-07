@@ -4,7 +4,6 @@ Implements the Generalized R-CNN framework
 """
 
 from collections import OrderedDict
-from charset_normalizer import detect
 import torch
 from torch import nn, Tensor
 import warnings
@@ -35,7 +34,7 @@ class GeneralizedRCNN(nn.Module):
         if roi_heads_stage2:
             self.roi_heads_stage2 = roi_heads_stage2 ## On original annotations
         else:
-            self.roi_heads_stage2 = roi_heads
+            self.roi_heads_stage2 = None
         # used only on torchscript mode
         self._has_warned = False
 
@@ -47,16 +46,12 @@ class GeneralizedRCNN(nn.Module):
 
         return detections
 
+    # def forward(self, images, targets_spp=None, targets_gt=None):
+            
+    #     outputs = self.forward(images, targets_spp, targets_gt)
+    #     return outputs
+
     def forward(self, images, targets_spp=None, targets_gt=None):
-
-        if 0:#self.baseline:
-            outputs = self.forward_baseline(images, targets_gt)
-        else:
-            outputs = self.forward_spp(images, targets_spp, targets_gt)
-
-        return outputs
-
-    def forward_spp(self, images, targets_spp=None, targets_gt=None):
         # type: (List[Tensor], Optional[List[Dict[str, Tensor]]], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
         """
         Args:
@@ -130,7 +125,12 @@ class GeneralizedRCNN(nn.Module):
             for idx, bx in enumerate(boxes):
                 merged_boxes = merge_op(ps[idx], bx, masks=None, scores=None, aff_thres=0.5)[0]
                 boxes[idx] = torch.cat([boxes[idx],merged_boxes.detach()]) 
-            _, detector_losses_s2 = self.roi_heads_stage2(features, boxes, images.image_sizes, targets_gt, class_logits_loss=class_loss)
+            
+            if self.roi_heads_stage2:
+                _, detector_losses_s2 = self.roi_heads_stage2(features, boxes, images.image_sizes, targets_gt, class_logits_loss=class_loss)
+            else:
+                _, detector_losses_s2 = self.roi_heads(features, boxes, images.image_sizes, targets_gt, class_logits_loss=class_loss)
+
             losses.update(detector_losses)
             losses.update(proposal_losses)
             
@@ -143,14 +143,18 @@ class GeneralizedRCNN(nn.Module):
 
             assert len(detections) == 1 , "Test bsz needs to be 1."
             
-            # for _ in range(self.niter_test):
+            # for _ in range(self.niter_test)
             with torch.no_grad():
                 boxes = merge_op(pairwise_similarities, boxes, masks=None, scores=None, aff_thres=0.5)[0]
                 pairwise_similarities = self.projection(features, [boxes], images.image_sizes).detach()
 
                 ## Also collect the aggregate of all boxes
                 union.append(boxes)
-            detections, _ = self.roi_heads_stage2(features, [torch.cat(union, dim=0)], images.image_sizes, class_logits_loss=class_loss, nms=False)
+            if self.roi_heads_stage2:
+                detections, _ = self.roi_heads_stage2(features, [torch.cat(union, dim=0)], images.image_sizes, class_logits_loss=class_loss, nms=False)
+            else:
+                detections, _ = self.roi_heads(features, [torch.cat(union, dim=0)], images.image_sizes, class_logits_loss=class_loss, nms=False)
+
             detections = [{k: v.cpu() for k, v in t.items()} for t in detections]
             detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
         ##########################################
@@ -188,58 +192,58 @@ class GeneralizedRCNN(nn.Module):
                                     .format(degen_bb, target_idx))
 
 
-    def forward_baseline(self, images, targets_gt=None):
-        # type: (List[Tensor], Optional[List[Dict[str, Tensor]]], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
-        """
-        Args:
-            images (list[Tensor]): images to be processed
-            targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
+    # def forward_baseline(self, images, targets_gt=None):
+    #     # type: (List[Tensor], Optional[List[Dict[str, Tensor]]], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
+    #     """
+    #     Args:
+    #         images (list[Tensor]): images to be processed
+    #         targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
 
-        Returns:
-            result (list[BoxList] or dict[Tensor]): the output from the model.
-                During training, it returns a dict[Tensor] which contains the losses.
-                During testing, it returns list[BoxList] contains additional fields
-                like `scores`, `labels` and `mask` (for Mask R-CNN models).
-        """
+    #     Returns:
+    #         result (list[BoxList] or dict[Tensor]): the output from the model.
+    #             During training, it returns a dict[Tensor] which contains the losses.
+    #             During testing, it returns list[BoxList] contains additional fields
+    #             like `scores`, `labels` and `mask` (for Mask R-CNN models).
+    #     """
 
-        if self.training and (targets_gt is None):
-            raise ValueError("In training mode, targets should be passed")
-        if self.training:
-            assert targets_gt is not None
+    #     if self.training and (targets_gt is None):
+    #         raise ValueError("In training mode, targets should be passed")
+    #     if self.training:
+    #         assert targets_gt is not None
 
-        original_image_sizes: List[Tuple[int, int]] = []
-        for img in images:
-            val = img.shape[-2:]
-            assert len(val) == 2
-            original_image_sizes.append((val[0], val[1]))
+    #     original_image_sizes: List[Tuple[int, int]] = []
+    #     for img in images:
+    #         val = img.shape[-2:]
+    #         assert len(val) == 2
+    #         original_image_sizes.append((val[0], val[1]))
 
-        images = tuple(images)
-        images, targets_gt = self.transform(images, targets_gt)
+    #     images = tuple(images)
+    #     images, targets_gt = self.transform(images, targets_gt)
 
-        features = self.backbone(images.tensors)
-        if isinstance(features, torch.Tensor):
-            features = OrderedDict([('0', features)])
-        proposals, proposal_losses = self.rpn(images, features, targets_gt)
-        if self.roi_heads.second_stage_scoring or self.roi_heads.first_stage_scoring:
-            class_loss = False
-        else:
-            class_loss = True
+    #     features = self.backbone(images.tensors)
+    #     if isinstance(features, torch.Tensor):
+    #         features = OrderedDict([('0', features)])
+    #     proposals, proposal_losses = self.rpn(images, features, targets_gt)
+    #     if self.roi_heads.second_stage_scoring or self.roi_heads.first_stage_scoring:
+    #         class_loss = False
+    #     else:
+    #         class_loss = True
 
-        detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets_gt, class_logits_loss=class_loss)
+    #     detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets_gt, class_logits_loss=class_loss)
 
-        if not self.training:
-            detections = [{k: v.cpu() for k, v in t.items()} for t in detections]
-            detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
-        ##########################################
-        ##########################################
-        losses = {}
-        losses.update(detector_losses)
-        losses.update(proposal_losses)
+    #     if not self.training:
+    #         detections = [{k: v.cpu() for k, v in t.items()} for t in detections]
+    #         detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
+    #     ##########################################
+    #     ##########################################
+    #     losses = {}
+    #     losses.update(detector_losses)
+    #     losses.update(proposal_losses)
 
-        if torch.jit.is_scripting():
-            if not self._has_warned:
-                warnings.warn("RCNN always returns a (Losses, Detections) tuple in scripting")
-                self._has_warned = True
-            return losses, detections
-        else:
-            return self.eager_outputs(losses, detections)
+    #     if torch.jit.is_scripting():
+    #         if not self._has_warned:
+    #             warnings.warn("RCNN always returns a (Losses, Detections) tuple in scripting")
+    #             self._has_warned = True
+    #         return losses, detections
+    #     else:
+    #         return self.eager_outputs(losses, detections)
