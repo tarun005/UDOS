@@ -170,22 +170,13 @@ def evaluate(model, data_loader, device, args, toBinary=False):
 
     split=args.data_split_test
     if args.dataset == "coco":
-        from VOStoCOCO import mapping
+        from VOCtoCOCO import mapping
         if split == "voc":
             indices = mapping._common_with_voc
         elif split == "coco":
             indices = mapping._exclusive_to_coco
         else:
             indices = mapping._all # Or all
-    elif args.dataset == "obj365":
-        from Obj365toCOCO import mapping
-        if split == "coco":
-            indices = mapping._common_with_coco
-        elif split == "excl":
-            indices = mapping._exclusive_to_obj365
-        else:
-            indices = mapping._all # Or all
-        iou_types = ["bbox"]
     else:
         indices = [1]
 

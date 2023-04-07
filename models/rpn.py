@@ -5,7 +5,7 @@ from torch import nn, Tensor
 
 import torchvision
 from torchvision.ops import boxes as box_ops
-from VOStoCOCO import mapping
+from VOCtoCOCO import mapping
 
 from . import _utils as det_utils
 from .image_list import ImageList

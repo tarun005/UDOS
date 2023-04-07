@@ -1,5 +1,5 @@
 import copy
-import os
+import os, sys
 from PIL import Image
 import random
 
@@ -142,9 +142,6 @@ def _coco_remove_images_without_annotations(dataset, cat_list=None):
 
     def _has_valid_annotation(anno):
         # if it's empty, there is no annotation
-        # for a in anno:
-        #     # if a["image_id"] not in [15153, 2526, 2249, 1427, 9176, 3191, 551, 11552]:
-        #         return False
         if len(anno) == 0:
             return False
         # if all boxes have close to zero area, there is no annotation
@@ -228,12 +225,6 @@ def convert_to_coco_api(ds):
     print(categories)
     categories = set([1])
     dataset['categories'] = [{'id': i} for i in sorted(categories)]
-    # # print(set(categories))
-    # # print(len(set(categories)))
-    # # print(len(dataset['annotations']))
-    # import json
-    # with open("voc_only_val.json" , "w") as fh:
-    #     json.dump(dataset, fh)
     coco_ds.dataset = dataset
     coco_ds.createIndex()
     return coco_ds
@@ -245,9 +236,9 @@ def get_coco_api_from_dataset(dataset, set=None, indices=None):
             break
         if isinstance(dataset, torch.utils.data.Subset):
             dataset = dataset.dataset
-    if 1:#isinstance(dataset, torchvision.datasets.CocoDetection):
         return dataset.det_gt.coco
-    return convert_to_coco_api(dataset.det_gt)
+    # if 1:#isinstance(dataset, torchvision.datasets.CocoDetection):
+    # return convert_to_coco_api(dataset.det_gt)
 
 
 class CocoDetection(Detection):
@@ -369,36 +360,23 @@ def get_coco(root, image_set, transforms, mode='instances', toBinary=False, subs
                 "train_gt": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
                 "train_spp": ("train2017", os.path.join("annotations/instances_train2017_MCG.json")),
             }
-        elif spp in ["ss","grid"]:
-            PATHS = {
-                "train_gt": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
-                "train_spp" : ("train2017", os.path.join("/checkpoint/trandu/coco_ann/", f"voc_part_masks.json" ))
-            }
-        elif spp in ["mcg"]:
-            PATHS = {
-                "train_gt": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
-                "train_spp" : ("train2017", "/checkpoint/trandu/coco_ann/instances_train2017_MCG_100.json")
-            }
         else:
-            PATHS = {
-                "train_gt": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
-                "train_spp" : ("train2017", "/checkpoint/trandu/tarun/OpenSegmentationProject/data/COCO/COCO_from_SSN/part100_train2017.json")
-            }
+            print("SuperPixel file not found.")
+            sys.exit(0)
     else:
-        # if spp == "mcg":
         PATHS = {
                     "train_gt": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val"))),
                     "train_spp" : ("val2017", os.path.join("annotations/instances_val2017_MCG_complete.json")),
                 }
 
 
-    from VOStoCOCO import mapping
+    from VOCtoCOCO import mapping
     if subset == "voc":
         indices = mapping._common_with_voc
-        print("#"*20)
         print("Clipping to VOC")
     elif subset == "coco":
         indices = mapping._exclusive_to_coco
+        print("Clipping to N-VOC")
     else:
         indices = None # Or all
     assert isinstance(indices, (list , type(None)))
@@ -427,9 +405,8 @@ def get_coco(root, image_set, transforms, mode='instances', toBinary=False, subs
     dataset = CocoDetectionMerged(img_folder, ann_file_spp=ann_file_spp, ann_file_gt=ann_file_gt, transforms_gt=transforms_gt, transforms_spp=transforms_spp, split=image_set)
     print("Before", len(dataset))
 
-    # if image_set == "train":
-    dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    # dataset = torch.utils.data.Subset(dataset, [i for i in range(16000)])
+    if image_set == "train":
+        dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
 
     print("After", len(dataset))
 

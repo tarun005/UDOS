@@ -311,7 +311,7 @@ def get_coco(root, image_set, transforms, mode='instances', toBinary=False, subs
                 }
 
 
-    from VOStoCOCO import mapping
+    from VOCtoCOCO import mapping
     if subset == "voc":
         indices = mapping._common_with_voc
         print("#"*20)
