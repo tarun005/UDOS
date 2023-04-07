@@ -32,7 +32,10 @@ class GeneralizedRCNN(nn.Module):
         self.rpn = rpn
         self.roi_heads = roi_heads ## On Superpixels
         # self.projection = projection
-        self.roi_heads_stage2 = roi_heads_stage2 ## On original annotations
+        if roi_heads_stage2:
+            self.roi_heads_stage2 = roi_heads_stage2 ## On original annotations
+        else:
+            self.roi_heads_stage2 = roi_heads
         # used only on torchscript mode
         self._has_warned = False
 
@@ -46,7 +49,7 @@ class GeneralizedRCNN(nn.Module):
 
     def forward(self, images, targets_spp=None, targets_gt=None):
 
-        if self.baseline:
+        if 0:#self.baseline:
             outputs = self.forward_baseline(images, targets_gt)
         else:
             outputs = self.forward_spp(images, targets_spp, targets_gt)
@@ -140,12 +143,10 @@ class GeneralizedRCNN(nn.Module):
 
             assert len(detections) == 1 , "Test bsz needs to be 1."
             
-            for _ in range(self.niter_test):
-                if len(boxes) <= 1:
-                    break
-                with torch.no_grad():
-                    boxes = merge_op(pairwise_similarities, boxes, masks=None, scores=None, aff_thres=0.5)[0]
-                    pairwise_similarities = self.projection(features, [boxes], images.image_sizes).detach()
+            # for _ in range(self.niter_test):
+            with torch.no_grad():
+                boxes = merge_op(pairwise_similarities, boxes, masks=None, scores=None, aff_thres=0.5)[0]
+                pairwise_similarities = self.projection(features, [boxes], images.image_sizes).detach()
 
                 ## Also collect the aggregate of all boxes
                 union.append(boxes)

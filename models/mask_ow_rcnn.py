@@ -177,15 +177,13 @@ class MaskRCNN(FasterRCNN):
                  # Mask parameters
                  mask_roi_pool=None, mask_head=None, mask_predictor=None,
                  ##Projection Parameters
-                 pos_encoding="grid", delta=5, n_iter_test=1,
+                 delta=5,
                  ## Loss coeffecients
                  lambda_l2 = 1., lambda_l3 = 1.,
                  ## Scoring params
                  first_stage_scoring=1, second_stage_scoring=1,
-                 ## baseline
-                 baseline=False,
                  ## scoring arch.
-                 config="shared", iou_overlap=0.9,
+                 shared=False, iou_overlap=0.9,
                  ):
 
         assert isinstance(mask_roi_pool, (MultiScaleRoIAlign, type(None)))
@@ -234,7 +232,7 @@ class MaskRCNN(FasterRCNN):
             box_score_thresh, box_nms_thresh, box_detections_per_img,
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,
-            bbox_reg_weights, config)
+            bbox_reg_weights, shared)
 
         self.roi_heads.mask_roi_pool = mask_roi_pool
         self.roi_heads.mask_head = mask_head
@@ -242,22 +240,20 @@ class MaskRCNN(FasterRCNN):
         self.roi_heads.mask_score_predictor = score_predictor
         self.roi_heads.first_stage_scoring = first_stage_scoring
         self.roi_heads.second_stage_scoring = second_stage_scoring
-        self.niter_test = n_iter_test
         self.lambda_l2 = lambda_l2
         self.lambda_l3 = lambda_l3
-        self.baseline = baseline
         self.iou_overlap = iou_overlap
 
-        self.roi_heads_stage2.mask_roi_pool = mask_roi_pool
-        self.roi_heads_stage2.mask_head = MaskRCNNHeads(out_channels, mask_layers, mask_dilation)
-        self.roi_heads_stage2.mask_predictor = MaskRCNNPredictor(mask_predictor_in_channels,
-                                               mask_dim_reduced, num_classes)
-        self.roi_heads_stage2.mask_score_predictor = MaskRCNNScorePredictor(mask_predictor_in_channels)
-        self.roi_heads_stage2.first_stage_scoring = first_stage_scoring
-        self.roi_heads_stage2.second_stage_scoring = second_stage_scoring
-
-        if not self.baseline:
-            self.projection = GroupingLayer(roiAlign=mask_roi_pool, delta=delta)
+        if not shared:
+            self.roi_heads_stage2.mask_roi_pool = mask_roi_pool
+            self.roi_heads_stage2.mask_head = MaskRCNNHeads(out_channels, mask_layers, mask_dilation)
+            self.roi_heads_stage2.mask_predictor = MaskRCNNPredictor(mask_predictor_in_channels,
+                                                mask_dim_reduced, num_classes)
+            self.roi_heads_stage2.mask_score_predictor = MaskRCNNScorePredictor(mask_predictor_in_channels)
+            self.roi_heads_stage2.first_stage_scoring = first_stage_scoring
+            self.roi_heads_stage2.second_stage_scoring = second_stage_scoring
+            
+        self.projection = GroupingLayer(roiAlign=mask_roi_pool, delta=delta)
 
 
 class MaskRCNNHeads(nn.Sequential):

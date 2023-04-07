@@ -88,7 +88,8 @@ def clusters(indices):
     ids = indices.unique()
     clusters = []
     for ii in ids:
-        members = [e for e,i in enumerate(indices) if i==ii]
+        members = list(torch.where(indices == ii)[0].long().numpy())
+        # members = [e for e,i in enumerate(indices) if i==ii]
         clusters.append(members)
     return clusters
 

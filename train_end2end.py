@@ -85,7 +85,7 @@ def get_args_parser(add_help=True):
     parser = argparse.ArgumentParser(description='PyTorch Detection Training', add_help=add_help)
 
     parser.add_argument('--data-path', default='/datasets01/COCO/022719/', help='dataset')
-    parser.add_argument('--dataset', default='coco', choices=["uvo","coco","lvis","openimages","ade20k","cityscapes"], help='dataset')
+    parser.add_argument('--dataset', default='coco', choices=["uvo","coco","openimages","ade20k"], help='dataset')
     parser.add_argument('--model', default='maskrcnn_resnet50_fpn', help='model')
     parser.add_argument('--device', default='cuda', help='device')
     parser.add_argument('-b', '--batch-size', default=2, type=int,
@@ -117,25 +117,26 @@ def get_args_parser(add_help=True):
     parser.add_argument('--rpn-score-thresh', default=None, type=float, help='rpn score threshold for faster-rcnn')
     parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
-    parser.add_argument('--data-augmentation', default="hflip", help='data augmentation policy (default: hflip)')
-    parser.add_argument('--num-classes', type=int, default=91, help='Number of classes. 91 for CoCo, 2 for CAS')
+    parser.add_argument('--data-augmentation', default="hflip", 
+                                            help='data augmentation policy (default: hflip)')
+    parser.add_argument('--num-classes', type=int, default=2, 
+                                            help='Number of classes. 2 is default for class-agnostic segmentation.')
     parser.add_argument('--data-split-train', type=str, default="all", help='Which COCO split to use.',
-                                                choices=["all", "voc", "coco" , "rare" , "common"])
+                                                choices=["all", "voc", "coco"])
     parser.add_argument('--data-split-test', type=str, default="all", help='Which COCO split to use.',
-                                                choices=["all", "voc", "coco" , "rare" , "common","excl"])
+                                                choices=["all", "voc", "coco"])
     parser.add_argument('--delta', type=int, default=15)
-    parser.add_argument('--thres', type=float, default=0.5)
-    parser.add_argument('--load_model', default='')
-    parser.add_argument('--test_niter', type=int)
+    # parser.add_argument('--thres', type=float, default=0.5)
+    # parser.add_argument('--load_model', default='')
+    # parser.add_argument('--test_niter', type=int)
     parser.add_argument('--lambda_2' , type=float)
     parser.add_argument('--lambda_3' , type=float)
     parser.add_argument('--first_stage_scoring',type=int,default=1,choices=[0,1])
     parser.add_argument('--second_stage_scoring',type=int,default=1,choices=[0,1])
     parser.add_argument('--spp', default="ss", choices=["ss","grid","mcg","ssn"])
-    parser.add_argument('--pos', default=None, choices=["sine","grid","none"])
-    parser.add_argument('--maskrcnn', default="false", choices=["true", "false"])
+    # parser.add_argument('--pos', default=None, choices=["sine","grid","none"])
+    # parser.add_argument('--maskrcnn', default="false", choices=["true", "false"])
     parser.add_argument('--detections', default=300, type=int)
-    parser.add_argument('--config', default=1, type=int, help="Architecture ablation")
     parser.add_argument('--iou_overlap_thres', type=float, default=0.5)
 
     parser.add_argument(
@@ -187,20 +188,25 @@ def train(args):
 
     device = torch.device(args.device)
 
-    args.maskrcnn = (args.maskrcnn == "true")
+    # args.maskrcnn = (args.maskrcnn == "true")
+
+    if args.dataset == "coco":
+        args.shared = False
+    else:
+        args.shared = True
 
     print("Creating model")
     kwargs = {
         "trainable_backbone_layers": args.trainable_backbone_layers,
         "lambda_l2": args.lambda_2,
         "lambda_l3": args.lambda_3,
-        "n_iter_test": args.test_niter,
+        # "n_iter_test": args.test_niter,
         "delta": args.delta,
         "first_stage_scoring": args.first_stage_scoring,
         "second_stage_scoring": args.second_stage_scoring,
-        "pos_encoding": args.pos,
-        "baseline": args.maskrcnn,
-        "config" : "config" + str(args.config),
+        # "pos_encoding": args.pos,
+        # "baseline": args.maskrcnn,
+        "shared" : args.shared,
         "iou_overlap" : args.iou_overlap_thres
     }
 

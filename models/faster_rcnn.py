@@ -164,7 +164,7 @@ class FasterRCNN(GeneralizedRCNN):
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
                  bbox_reg_weights=None,
-                 config="shared"):
+                 shared=False):
 
         if not hasattr(backbone, "out_channels"):
             raise ValueError(
@@ -211,23 +211,15 @@ class FasterRCNN(GeneralizedRCNN):
                 output_size=7,
                 sampling_ratio=2)
 
-        if box_head is None:
-            
-            resolution = box_roi_pool.output_size[0]
-            representation_size = 1024 ## 256 for config 5
+        resolution = box_roi_pool.output_size[0]
+        representation_size = 1024 ## 256 for config 5
 
-            box_head = TwoMLPHead_config1(
-                out_channels * resolution ** 2,
-                representation_size)
-            box_head_2 = TwoMLPHead_config1(
-                out_channels * resolution ** 2,
-                representation_size)
+        box_head = TwoMLPHead_config1(
+            out_channels * resolution ** 2,
+            representation_size)
 
         representation_size = 1024 
         box_predictor = FastRCNNPredictor(
-            representation_size,
-            num_classes)
-        box_predictor_2 = FastRCNNPredictor(
             representation_size,
             num_classes)
 
@@ -238,14 +230,26 @@ class FasterRCNN(GeneralizedRCNN):
             box_batch_size_per_image, box_positive_fraction,
             bbox_reg_weights,
             box_score_thresh, box_nms_thresh, box_detections_per_img)
+        
+        import pdb; pdb. set_trace()
+        
+        if not shared:
+            box_head_2 = TwoMLPHead_config1(
+                out_channels * resolution ** 2,
+                representation_size)
+            box_predictor_2 = FastRCNNPredictor(
+                representation_size,
+                num_classes)
+            roi_heads_stage2 = RoIHeads(
+                # Box
+                box_roi_pool, box_head_2, box_predictor_2,
+                box_fg_iou_thresh, box_bg_iou_thresh,
+                box_batch_size_per_image, box_positive_fraction,
+                bbox_reg_weights,
+                box_score_thresh, box_nms_thresh, box_detections_per_img) ## no NMS in second stage
+        else:
+            roi_heads_stage2 = None
 
-        roi_heads_stage2 = RoIHeads(
-            # Box
-            box_roi_pool, box_head_2, box_predictor_2,
-            box_fg_iou_thresh, box_bg_iou_thresh,
-            box_batch_size_per_image, box_positive_fraction,
-            bbox_reg_weights,
-            box_score_thresh, box_nms_thresh, box_detections_per_img) ## no NMS in second stage
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
