@@ -10,6 +10,8 @@ UDOS (**U**p-**D**own **O**pen-world **S**egmentation) is a simple and efficient
 
 ## Testing Pre-trained models
 
+You can download the pre-trained model trained on VOC classes [[here](https://drive.google.com/file/d/1qT5OrftlbWN0Zidq3R82L6-dV3CUi1TM/view?usp=sharing)] and on complete COCO dataset [[here](https://drive.google.com/file/d/1_NKAi1jTzYJQ11G1wzKuZUITMVHheled/view?usp=sharing)]
+
 ## Training UDOS
 
 ## Citation

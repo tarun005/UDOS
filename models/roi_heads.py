@@ -140,200 +140,6 @@ def maskrcnn_loss(mask_logits, proposals, gt_masks, gt_labels, mask_matched_idxs
     return mask_loss, mask_iou_targets
 
 
-def keypoints_to_heatmap(keypoints, rois, heatmap_size):
-    # type: (Tensor, Tensor, int) -> Tuple[Tensor, Tensor]
-    offset_x = rois[:, 0]
-    offset_y = rois[:, 1]
-    scale_x = heatmap_size / (rois[:, 2] - rois[:, 0])
-    scale_y = heatmap_size / (rois[:, 3] - rois[:, 1])
-
-    offset_x = offset_x[:, None]
-    offset_y = offset_y[:, None]
-    scale_x = scale_x[:, None]
-    scale_y = scale_y[:, None]
-
-    x = keypoints[..., 0]
-    y = keypoints[..., 1]
-
-    x_boundary_inds = x == rois[:, 2][:, None]
-    y_boundary_inds = y == rois[:, 3][:, None]
-
-    x = (x - offset_x) * scale_x
-    x = x.floor().long()
-    y = (y - offset_y) * scale_y
-    y = y.floor().long()
-
-    x[x_boundary_inds] = heatmap_size - 1
-    y[y_boundary_inds] = heatmap_size - 1
-
-    valid_loc = (x >= 0) & (y >= 0) & (x < heatmap_size) & (y < heatmap_size)
-    vis = keypoints[..., 2] > 0
-    valid = (valid_loc & vis).long()
-
-    lin_ind = y * heatmap_size + x
-    heatmaps = lin_ind * valid
-
-    return heatmaps, valid
-
-
-def _onnx_heatmaps_to_keypoints(maps, maps_i, roi_map_width, roi_map_height,
-                                widths_i, heights_i, offset_x_i, offset_y_i):
-    num_keypoints = torch.scalar_tensor(maps.size(1), dtype=torch.int64)
-
-    width_correction = widths_i / roi_map_width
-    height_correction = heights_i / roi_map_height
-
-    roi_map = F.interpolate(
-        maps_i[:, None], size=(int(roi_map_height), int(roi_map_width)), mode='bicubic', align_corners=False)[:, 0]
-
-    w = torch.scalar_tensor(roi_map.size(2), dtype=torch.int64)
-    pos = roi_map.reshape(num_keypoints, -1).argmax(dim=1)
-
-    x_int = (pos % w)
-    y_int = ((pos - x_int) // w)
-
-    x = (torch.tensor(0.5, dtype=torch.float32) + x_int.to(dtype=torch.float32)) * \
-        width_correction.to(dtype=torch.float32)
-    y = (torch.tensor(0.5, dtype=torch.float32) + y_int.to(dtype=torch.float32)) * \
-        height_correction.to(dtype=torch.float32)
-
-    xy_preds_i_0 = x + offset_x_i.to(dtype=torch.float32)
-    xy_preds_i_1 = y + offset_y_i.to(dtype=torch.float32)
-    xy_preds_i_2 = torch.ones(xy_preds_i_1.shape, dtype=torch.float32)
-    xy_preds_i = torch.stack([xy_preds_i_0.to(dtype=torch.float32),
-                              xy_preds_i_1.to(dtype=torch.float32),
-                              xy_preds_i_2.to(dtype=torch.float32)], 0)
-
-    # TODO: simplify when indexing without rank will be supported by ONNX
-    base = num_keypoints * num_keypoints + num_keypoints + 1
-    ind = torch.arange(num_keypoints)
-    ind = ind.to(dtype=torch.int64) * base
-    end_scores_i = roi_map.index_select(1, y_int.to(dtype=torch.int64)) \
-        .index_select(2, x_int.to(dtype=torch.int64)).view(-1).index_select(0, ind.to(dtype=torch.int64))
-
-    return xy_preds_i, end_scores_i
-
-
-@torch.jit._script_if_tracing
-def _onnx_heatmaps_to_keypoints_loop(maps, rois, widths_ceil, heights_ceil,
-                                     widths, heights, offset_x, offset_y, num_keypoints):
-    xy_preds = torch.zeros((0, 3, int(num_keypoints)), dtype=torch.float32, device=maps.device)
-    end_scores = torch.zeros((0, int(num_keypoints)), dtype=torch.float32, device=maps.device)
-
-    for i in range(int(rois.size(0))):
-        xy_preds_i, end_scores_i = _onnx_heatmaps_to_keypoints(maps, maps[i],
-                                                               widths_ceil[i], heights_ceil[i],
-                                                               widths[i], heights[i],
-                                                               offset_x[i], offset_y[i])
-        xy_preds = torch.cat((xy_preds.to(dtype=torch.float32),
-                              xy_preds_i.unsqueeze(0).to(dtype=torch.float32)), 0)
-        end_scores = torch.cat((end_scores.to(dtype=torch.float32),
-                                end_scores_i.to(dtype=torch.float32).unsqueeze(0)), 0)
-    return xy_preds, end_scores
-
-
-def heatmaps_to_keypoints(maps, rois):
-    """Extract predicted keypoint locations from heatmaps. Output has shape
-    (#rois, 4, #keypoints) with the 4 rows corresponding to (x, y, logit, prob)
-    for each keypoint.
-    """
-    # This function converts a discrete image coordinate in a HEATMAP_SIZE x
-    # HEATMAP_SIZE image to a continuous keypoint coordinate. We maintain
-    # consistency with keypoints_to_heatmap_labels by using the conversion from
-    # Heckbert 1990: c = d + 0.5, where d is a discrete coordinate and c is a
-    # continuous coordinate.
-    offset_x = rois[:, 0]
-    offset_y = rois[:, 1]
-
-    widths = rois[:, 2] - rois[:, 0]
-    heights = rois[:, 3] - rois[:, 1]
-    widths = widths.clamp(min=1)
-    heights = heights.clamp(min=1)
-    widths_ceil = widths.ceil()
-    heights_ceil = heights.ceil()
-
-    num_keypoints = maps.shape[1]
-
-    if torchvision._is_tracing():
-        xy_preds, end_scores = _onnx_heatmaps_to_keypoints_loop(maps, rois,
-                                                                widths_ceil, heights_ceil, widths, heights,
-                                                                offset_x, offset_y,
-                                                                torch.scalar_tensor(num_keypoints, dtype=torch.int64))
-        return xy_preds.permute(0, 2, 1), end_scores
-
-    xy_preds = torch.zeros((len(rois), 3, num_keypoints), dtype=torch.float32, device=maps.device)
-    end_scores = torch.zeros((len(rois), num_keypoints), dtype=torch.float32, device=maps.device)
-    for i in range(len(rois)):
-        roi_map_width = int(widths_ceil[i].item())
-        roi_map_height = int(heights_ceil[i].item())
-        width_correction = widths[i] / roi_map_width
-        height_correction = heights[i] / roi_map_height
-        roi_map = F.interpolate(
-            maps[i][:, None], size=(roi_map_height, roi_map_width), mode='bicubic', align_corners=False)[:, 0]
-        # roi_map_probs = scores_to_probs(roi_map.copy())
-        w = roi_map.shape[2]
-        pos = roi_map.reshape(num_keypoints, -1).argmax(dim=1)
-
-        x_int = pos % w
-        y_int = (pos - x_int) // w
-        # assert (roi_map_probs[k, y_int, x_int] ==
-        #         roi_map_probs[k, :, :].max())
-        x = (x_int.float() + 0.5) * width_correction
-        y = (y_int.float() + 0.5) * height_correction
-        xy_preds[i, 0, :] = x + offset_x[i]
-        xy_preds[i, 1, :] = y + offset_y[i]
-        xy_preds[i, 2, :] = 1
-        end_scores[i, :] = roi_map[torch.arange(num_keypoints), y_int, x_int]
-
-    return xy_preds.permute(0, 2, 1), end_scores
-
-
-def keypointrcnn_loss(keypoint_logits, proposals, gt_keypoints, keypoint_matched_idxs):
-    # type: (Tensor, List[Tensor], List[Tensor], List[Tensor]) -> Tensor
-    N, K, H, W = keypoint_logits.shape
-    assert H == W
-    discretization_size = H
-    heatmaps = []
-    valid = []
-    for proposals_per_image, gt_kp_in_image, midx in zip(proposals, gt_keypoints, keypoint_matched_idxs):
-        kp = gt_kp_in_image[midx]
-        heatmaps_per_image, valid_per_image = keypoints_to_heatmap(
-            kp, proposals_per_image, discretization_size
-        )
-        heatmaps.append(heatmaps_per_image.view(-1))
-        valid.append(valid_per_image.view(-1))
-
-    keypoint_targets = torch.cat(heatmaps, dim=0)
-    valid = torch.cat(valid, dim=0).to(dtype=torch.uint8)
-    valid = torch.where(valid)[0]
-
-    # torch.mean (in binary_cross_entropy_with_logits) does'nt
-    # accept empty tensors, so handle it sepaartely
-    if keypoint_targets.numel() == 0 or len(valid) == 0:
-        return keypoint_logits.sum() * 0
-
-    keypoint_logits = keypoint_logits.view(N * K, H * W)
-
-    keypoint_loss = F.cross_entropy(keypoint_logits[valid], keypoint_targets[valid])
-    return keypoint_loss
-
-
-def keypointrcnn_inference(x, boxes):
-    # type: (Tensor, List[Tensor]) -> Tuple[List[Tensor], List[Tensor]]
-    kp_probs = []
-    kp_scores = []
-
-    boxes_per_image = [box.size(0) for box in boxes]
-    x2 = x.split(boxes_per_image, dim=0)
-
-    for xx, bb in zip(x2, boxes):
-        kp_prob, scores = heatmaps_to_keypoints(xx, bb)
-        kp_probs.append(kp_prob)
-        kp_scores.append(scores)
-
-    return kp_probs, kp_scores
-
-
 def _onnx_expand_boxes(boxes, scale):
     # type: (Tensor, float) -> Tensor
     w_half = (boxes[:, 2] - boxes[:, 0]) * .5
@@ -687,11 +493,7 @@ class RoIHeads(nn.Module):
         boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
         pred_boxes = self.box_coder.decode(box_regression, proposals)
 
-        # pred_scores = F.softmax(class_logits, -1)
-        # if nms:
-        #     pred_scores = F.softmax(class_logits, -1)
-        # else:
-        pred_scores = class_logits #torch.stack([torch.zeros_like(class_logits[:,0]) , class_logits[:,1]])
+        pred_scores = class_logits 
 
         pred_boxes_list = pred_boxes.split(boxes_per_image, 0)
         pred_scores_list = pred_scores.split(boxes_per_image, 0)
@@ -731,8 +533,6 @@ class RoIHeads(nn.Module):
             if nms:
                 nms_thresh = self.nms_thresh
                 keep = box_ops.batched_nms(boxes, scores, labels, nms_thresh)
-                # keep only topk scoring predictions
-                # keep = keep[:self.detections_per_img]
                 boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
 
             all_keep.append(keep)
@@ -806,13 +606,6 @@ class RoIHeads(nn.Module):
             }
             
         else:
-            # if stage1 and self.first_stage_scoring: 
-            #     ## append box_scores to class scores
-            #     box_scores = box_scores.clamp(min=0, max=1.).view(-1)
-            #     class_scores = F.softmax(class_logits, dim=1)[:,1].view(-1)
-            #     net_scores = (box_scores*class_scores)**0.5
-            #     class_logits[:,1:2] = net_scores.view(-1,1)
-            # else:
             class_logits = F.softmax(class_logits, -1)
 
             boxes_per_image = [len(p) for p in proposals]
@@ -828,7 +621,6 @@ class RoIHeads(nn.Module):
                         "boxes": boxes[i],
                         "labels": labels[i],
                         "scores": scores[i],
-                        # "keep" : keep[i]
                     }
                 )
             if stage1:
@@ -857,7 +649,6 @@ class RoIHeads(nn.Module):
                 mask_features = self.mask_head(mask_features)
                 mask_logits = self.mask_predictor(mask_features)
                 mask_scores = self.mask_score_predictor(mask_features)
-                # import pdb; pdb.set_trace()
             else:
                 raise Exception("Expected mask_roi_pool to be not None")
 
@@ -907,13 +698,9 @@ class RoIHeads(nn.Module):
                     box_scores = [bs.clamp(min=0, max=1.) for bs in box_scores]
                     mask_scores = [ms.clamp(min=0, max=1.) for ms in mask_scores]
 
-
-                    # import pdb; pdb.set_trace()
                     class_scores = [r["scores"][:,None] for r in result]
                     total_scores = [(bs*ms*cs)**(1/3) for bs,ms,cs in zip(box_scores, mask_scores, class_scores)]
 
-
-                    # total_scores = [(bs*ms)**(1/2) for bs,ms in zip(box_scores, mask_scores)]
 
                     for mask_prob, r, s in zip(masks_probs, result, total_scores):
                         r["masks"] = mask_prob
@@ -922,20 +709,11 @@ class RoIHeads(nn.Module):
                     for mask_prob, r in zip(masks_probs, result):
                         r["masks"] = mask_prob
 
-                # if self.second_stage_scoring:
-                #     total_scores = mask_scores
-                #     for mask_prob, r, s in zip(masks_probs, result, total_scores):
-                #         r["masks"] = mask_prob
-                #         r["scores"] = s.view(-1)
-                # else:
-                #     for mask_prob, r in zip(masks_probs, result):
-                #         r["masks"] = mask_prob
                 for r in result:
                     scores_r = r["scores"]
                     indices = torch.argsort(scores_r, descending=True)[:self.detections_per_img]
 
                     r["scores"] = scores_r[indices]
-                    # import pdb; pdb.set_trace()
                     r["boxes"] = r["boxes"][indices]
                     r["masks"] = r["masks"][indices]
                     r["labels"] = r["labels"][indices]

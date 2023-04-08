@@ -217,7 +217,7 @@ class GeneralizedRCNNTransform(nn.Module):
         return batched_imgs
 
     def postprocess_partial(self,
-                    result,               # type: List[Dict[str, Tensor]]
+                    result,      # type: List[Dict[str, Tensor]]
                     image_sizes  # type: List[Tuple[int, int]]
                     ):
         for i, (pred, im_s) in enumerate(zip(result, image_sizes)):

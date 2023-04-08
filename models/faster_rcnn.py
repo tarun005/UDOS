@@ -212,7 +212,7 @@ class FasterRCNN(GeneralizedRCNN):
                 sampling_ratio=2)
 
         resolution = box_roi_pool.output_size[0]
-        representation_size = 1024 ## 256 for config 5
+        representation_size = 1024 
 
         box_head = TwoMLPHead(
             out_channels * resolution ** 2,
@@ -273,19 +273,13 @@ class TwoMLPHead(nn.Module):
         self.fc6 = nn.Linear(in_channels, representation_size)
         self.fc7 = nn.Linear(representation_size, representation_size)
 
-        # self.fc6_score = nn.Linear(representation_size, representation_size)
-        # self.fc7_score = nn.Linear(representation_size, representation_size)
-
     def forward(self, x):
         x = x.flatten(start_dim=1)
 
         x = F.relu(self.fc6(x))
         x = F.relu(self.fc7(x))
 
-        # x_2 = F.relu(self.fc6_score(x))
-        # x_2 = F.relu(self.fc7_score(x_2))
-
-        return x#, x_2
+        return x
 
 class FastRCNNPredictor(nn.Module):
     """
@@ -308,7 +302,6 @@ class FastRCNNPredictor(nn.Module):
             x_1 , x_2 = x
         else:
             x_1 = x_2 = x
-        # x = x.flatten(start_dim=1)
         scores = self.cls_score(x_1)
         bbox_deltas = self.bbox_pred(x_1)
         bbox_scores = self.bbox_score(x_2)
@@ -401,35 +394,3 @@ def fasterrcnn_resnet50_fpn(pretrained=False, progress=True,
         model.load_state_dict(state_dict)
         overwrite_eps(model, 0.0)
     return model
-
-
-def fasterrcnn_mobilenet_v3_large_fpn(pretrained=False, progress=True, num_classes=91, pretrained_backbone=True,
-                                      trainable_backbone_layers=None, **kwargs):
-    """
-    Constructs a high resolution Faster R-CNN model with a MobileNetV3-Large FPN backbone.
-    It works similarly to Faster R-CNN with ResNet-50 FPN backbone. See `fasterrcnn_resnet50_fpn` for more details.
-
-    Example::
-
-        >>> model = torchvision.models.detection.fasterrcnn_mobilenet_v3_large_fpn(pretrained=True)
-        >>> model.eval()
-        >>> x = [torch.rand(3, 300, 400), torch.rand(3, 500, 400)]
-        >>> predictions = model(x)
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on COCO train2017
-        progress (bool): If True, displays a progress bar of the download to stderr
-        num_classes (int): number of output classes of the model (including the background)
-        pretrained_backbone (bool): If True, returns a model with backbone pre-trained on Imagenet
-        trainable_backbone_layers (int): number of trainable (not frozen) resnet layers starting from final block.
-            Valid values are between 0 and 6, with 6 meaning all backbone layers are trainable.
-    """
-    weights_name = "fasterrcnn_mobilenet_v3_large_fpn_coco"
-    defaults = {
-        "rpn_score_thresh": 0.05,
-    }
-
-    kwargs = {**defaults, **kwargs}
-    return _fasterrcnn_mobilenet_v3_large_fpn(weights_name, pretrained=pretrained, progress=progress,
-                                              num_classes=num_classes, pretrained_backbone=pretrained_backbone,
-                                              trainable_backbone_layers=trainable_backbone_layers, **kwargs)

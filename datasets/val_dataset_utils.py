@@ -132,9 +132,6 @@ def _coco_remove_images_without_annotations(dataset, cat_list=None):
 
     def _has_valid_annotation(anno):
         # if it's empty, there is no annotation
-        # for a in anno:
-        #     if a["image_id"] not in [329703, 206685, 169701, 352612, 211141, 56599, 335503, 336113]:
-        #         return False
         if len(anno) == 0:
             return False
         # if all boxes have close to zero area, there is no annotation
@@ -171,9 +168,6 @@ def convert_to_coco_api(ds, eval_classes):
     dataset = {'images': [], 'categories': [], 'annotations': []}
     categories = set()
     for img_idx in range(len(ds)):
-        # print("{}/{}".format(img_idx+1, len(ds)), end="\r", flush=True)
-        # find better way to get target
-        # targets = ds.get_annotations(img_idx)
         img, targets = ds[img_idx]
         image_id = targets["image_id"].item()
         img_dict = {}
@@ -217,14 +211,7 @@ def convert_to_coco_api(ds, eval_classes):
             ann_id += 1
     print(categories)
     print(len(categories))
-    # categories = set([1])
     dataset['categories'] = [{'id': i} for i in sorted(categories)]
-    # # print(set(categories))
-    # # print(len(set(categories)))
-    # # print(len(dataset['annotations']))
-    # import json
-    # with open("voc_only_val.json" , "w") as fh:
-    #     json.dump(dataset, fh)
     coco_ds.dataset = dataset
     coco_ds.createIndex()
     return coco_ds
@@ -258,7 +245,6 @@ class CocoDetection(Detection):
 
 class ConvertLabelsToBinary(object):
     def __call__(self, image, target):
-        # import pdb; pdb.set_trace()
         target["labels"] = torch.ones_like(target["labels"], dtype=torch.int64)
         return image, target
         
@@ -275,15 +261,8 @@ def get_coco_test(root, image_set, transforms, mode='instances', toBinary=False,
     PATHS = {
         "train": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
         "val": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val"))),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
     }
 
-    # from VOStoCOCO import mapping
-    # if subset == "voc":
-    #     indices = mapping._common_with_voc
-    # elif subset == "coco":
-    #     indices = mapping._exclusive_to_coco
-    # else:
     indices = None # Or all
     assert isinstance(indices, (list , type(None)))
 
@@ -292,8 +271,6 @@ def get_coco_test(root, image_set, transforms, mode='instances', toBinary=False,
     if transforms is not None:
         t.append(transforms)
     
-    # if toBinary:
-    #     t.append(ConvertLabelsToBinary())
     transforms = T.Compose(t)
 
     img_folder, ann_file = PATHS[image_set]
@@ -305,43 +282,6 @@ def get_coco_test(root, image_set, transforms, mode='instances', toBinary=False,
 
     if image_set == "train":
         dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
-
-    return dataset
-
-
-def get_lvis_test(root, image_set, transforms, mode='instances', toBinary=False, subset="all", spp=None):
-    """
-        subset: all stands for complete CoCo subset
-                voc stands for 20 classes in common between COCO and VOC.
-                coco stands for 60 classes exclusive to coco
-    """
-    print("Clipping subset to:" , subset)
-    anno_file_template = "lvis_v1_{}_coco_filtered_0.5_oln_compatible_cocoval.json"
-
-    PATHS = {
-        "train": ("train2017", os.path.join("annotations", anno_file_template.format("train"))),
-        "val": ("val2017", "/newfoundland2/tarun/datasets/LVIS/lvis_v1_val_singlelabel.json"),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
-    }
-
-    indices = None # Or all
-    assert isinstance(indices, (list , type(None)))
-
-    t = [ConvertCocoPolysToMask(indices)]
-
-    if transforms is not None:
-        t.append(transforms)
-    
-    if toBinary:
-        t.append(ConvertLabelsToBinary())
-    transforms = T.Compose(t)
-
-    img_folder, ann_file = PATHS[image_set]
-    img_folder = os.path.join(root, img_folder)
-    ann_file = os.path.join(root, ann_file)
-
-    dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
     print("After", len(dataset))
 
     return dataset
@@ -377,11 +317,6 @@ def get_uvo_test(root, image_set, transforms, mode='instances', toBinary=False, 
     ann_file = os.path.join(root, ann_file)
 
     dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
-    print("Before", len(dataset))
-
-    # if image_set == "val":
-    #     dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
 
     return dataset
 
@@ -397,7 +332,6 @@ def get_openimages_test(root, image_set, transforms, mode='instances', toBinary=
     PATHS = {
         "train": ("validation", os.path.join("annotations", anno_file_template.format("train"))),
         "val": ("validation", os.path.join("annotations", anno_file_template.format("val"))),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
     }
 
     indices = None # Or all
@@ -415,11 +349,6 @@ def get_openimages_test(root, image_set, transforms, mode='instances', toBinary=
     ann_file = os.path.join(root, ann_file)
 
     dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
-    print("Before", len(dataset))
-
-    # if image_set == "val":
-    #     dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
 
     return dataset
 
@@ -431,12 +360,10 @@ def get_ade20k_test(root, image_set, transforms, mode='instances', toBinary=Fals
     """
     print("Clipping subset to:" , subset)
     anno_file_template = "{}_instances_weiyao.json"
-    # anno_file_template = "{}.json"
 
     PATHS = {
         "train": ("", os.path.join("annotations", anno_file_template.format("train"))),
         "val": ("", os.path.join("annotations", anno_file_template.format("val"))),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
     }
 
     indices = None # Or all
@@ -454,112 +381,4 @@ def get_ade20k_test(root, image_set, transforms, mode='instances', toBinary=Fals
     ann_file = os.path.join(root, ann_file)
 
     dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
-    print("Before", len(dataset))
-
-    # if image_set == "val":
-    #     dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
-
     return dataset
-
-def get_obj365_test(root, image_set, transforms, mode='instances', toBinary=False, subset="all"):
-    """
-        subset: all stands for complete CoCo subset
-                voc stands for 20 classes in common between COCO and VOC.
-                coco stands for 60 classes exclusive to coco
-    """
-    print("Clipping subset to:" , subset)
-    anno_file_template = "boxes_{}.json"
-
-    PATHS = {
-        "train": ("", os.path.join("annotations", anno_file_template.format("train"))),
-        "val": ("", os.path.join("annotations", anno_file_template.format("val"))),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
-    }
-
-    indices = None
-    assert isinstance(indices, (list , type(None)))
-
-    t = [ConvertCocoPolysToMask(indices)]
-
-    if transforms is not None:
-        t.append(transforms)
-    
-    t.append(ConvertLabelsToBinary())
-    transforms = T.Compose(t)
-
-    img_folder, ann_file = PATHS[image_set]
-    img_folder = os.path.join(root, img_folder)
-    ann_file = os.path.join(root, ann_file)
-
-    dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
-    print("Before", len(dataset))
-
-    # if image_set == "val":
-    #     dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
-
-    return dataset
-
-def get_cityscapes_test(root, image_set, transforms, mode='instances', toBinary=False, subset="all"):
-    """
-        subset: all stands for complete CoCo subset
-                voc stands for 20 classes in common between COCO and VOC.
-                coco stands for 60 classes exclusive to coco
-    """
-    print("Clipping subset to:" , subset)
-    anno_file_template = "instancesonly_filtered_gtFine_{}.json"
-
-    PATHS = {
-        "train": ("", os.path.join("annotations", anno_file_template.format("train"))),
-        "val": ("", os.path.join("annotations", anno_file_template.format("val"))),
-        # "train": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val")))
-    }
-
-    indices = None
-    assert isinstance(indices, (list , type(None)))
-
-    t = [ConvertCocoPolysToMask(indices)]
-
-    if transforms is not None:
-        t.append(transforms)
-    
-    transforms = T.Compose(t)
-
-    img_folder, ann_file = PATHS[image_set]
-    img_folder = os.path.join(root, img_folder)
-    ann_file = os.path.join(root, ann_file)
-
-    dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
-    print("Before", len(dataset))
-
-    # if image_set == "val":
-    #     dataset = _coco_remove_images_without_annotations(dataset, cat_list=indices)
-    print("After", len(dataset))
-
-    return dataset
-
-if __name__ == "__main__":
-
-    import presets, pdb
-    from torch.utils.data import DataLoader
-    from utils import collate_fn
-
-    dataset_train = get_obj365_test("/newfoundland2/tarun/datasets/Objects365", "val", presets.DetectionPresetTrain("hflip"), subset="coco")
-    data_loader_train = DataLoader(dataset_train, batch_size=1, shuffle=True, num_workers=8, collate_fn=collate_fn)
-
-    labels = []
-    counts = 0
-    for i , (imgs, target) in enumerate(data_loader_train):
-        # import pdb; pdb.set_trace()
-        print(f"{i+1}/{len(data_loader_train)}" , end="\r")
-    #     io.write_video("video_1.mp4" , video, fps=30)
-        allLabels = torch.cat([(t["labels"]) for t in target], dim=0)
-        # counts += len(target[0]["labels"])
-        labels.append(allLabels)
-        
-        if i%1000 == 0:
-            print(torch.cat(labels, dim=0).unique())
-    print()
-    print(torch.cat(labels, dim=0).unique())
-    print(counts)

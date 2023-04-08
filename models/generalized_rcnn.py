@@ -30,7 +30,6 @@ class GeneralizedRCNN(nn.Module):
         self.backbone = backbone
         self.rpn = rpn
         self.roi_heads = roi_heads ## On Superpixels
-        # self.projection = projection
         if roi_heads_stage2:
             self.roi_heads_stage2 = roi_heads_stage2 ## On original annotations
         else:
@@ -45,11 +44,6 @@ class GeneralizedRCNN(nn.Module):
             return losses
 
         return detections
-
-    # def forward(self, images, targets_spp=None, targets_gt=None):
-            
-    #     outputs = self.forward(images, targets_spp, targets_gt)
-    #     return outputs
 
     def forward(self, images, targets_spp=None, targets_gt=None):
         # type: (List[Tensor], Optional[List[Dict[str, Tensor]]], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
@@ -143,7 +137,6 @@ class GeneralizedRCNN(nn.Module):
 
             assert len(detections) == 1 , "Test bsz needs to be 1."
             
-            # for _ in range(self.niter_test)
             with torch.no_grad():
                 boxes = merge_op(pairwise_similarities, boxes, masks=None, scores=None, aff_thres=0.5)[0]
                 pairwise_similarities = self.projection(features, [boxes], images.image_sizes).detach()
@@ -190,60 +183,3 @@ class GeneralizedRCNN(nn.Module):
                 raise ValueError("All bounding boxes should have positive height and width."
                                     " Found invalid box {} for target at index {}."
                                     .format(degen_bb, target_idx))
-
-
-    # def forward_baseline(self, images, targets_gt=None):
-    #     # type: (List[Tensor], Optional[List[Dict[str, Tensor]]], Optional[List[Dict[str, Tensor]]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
-    #     """
-    #     Args:
-    #         images (list[Tensor]): images to be processed
-    #         targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
-
-    #     Returns:
-    #         result (list[BoxList] or dict[Tensor]): the output from the model.
-    #             During training, it returns a dict[Tensor] which contains the losses.
-    #             During testing, it returns list[BoxList] contains additional fields
-    #             like `scores`, `labels` and `mask` (for Mask R-CNN models).
-    #     """
-
-    #     if self.training and (targets_gt is None):
-    #         raise ValueError("In training mode, targets should be passed")
-    #     if self.training:
-    #         assert targets_gt is not None
-
-    #     original_image_sizes: List[Tuple[int, int]] = []
-    #     for img in images:
-    #         val = img.shape[-2:]
-    #         assert len(val) == 2
-    #         original_image_sizes.append((val[0], val[1]))
-
-    #     images = tuple(images)
-    #     images, targets_gt = self.transform(images, targets_gt)
-
-    #     features = self.backbone(images.tensors)
-    #     if isinstance(features, torch.Tensor):
-    #         features = OrderedDict([('0', features)])
-    #     proposals, proposal_losses = self.rpn(images, features, targets_gt)
-    #     if self.roi_heads.second_stage_scoring or self.roi_heads.first_stage_scoring:
-    #         class_loss = False
-    #     else:
-    #         class_loss = True
-
-    #     detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets_gt, class_logits_loss=class_loss)
-
-    #     if not self.training:
-    #         detections = [{k: v.cpu() for k, v in t.items()} for t in detections]
-    #         detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
-    #     ##########################################
-    #     ##########################################
-    #     losses = {}
-    #     losses.update(detector_losses)
-    #     losses.update(proposal_losses)
-
-    #     if torch.jit.is_scripting():
-    #         if not self._has_warned:
-    #             warnings.warn("RCNN always returns a (Losses, Detections) tuple in scripting")
-    #             self._has_warned = True
-    #         return losses, detections
-    #     else:
-    #         return self.eager_outputs(losses, detections)

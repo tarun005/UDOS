@@ -207,7 +207,7 @@ class MaskRCNN(FasterRCNN):
 
 
         if mask_predictor is None:
-            mask_predictor_in_channels = 256  # == mask_layers[-1]
+            mask_predictor_in_channels = 256  
             mask_dim_reduced = 256
             mask_predictor = MaskRCNNPredictor(mask_predictor_in_channels,
                                                mask_dim_reduced, num_classes)

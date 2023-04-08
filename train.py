@@ -18,26 +18,20 @@ Because the number of images is smaller in the person keypoint subset of COCO,
 the number of epochs should be adapted so that we have the same number of iterations.
 """
 import datetime
-from models.projection import *
 import os
 import time
 import copy
 
 import torch
 import torch.utils.data
-# import torchvison
-# import torchvision.models.detection
-# from models import mask_rcnn
 import models
 
-from coco_utils import get_coco_ss,get_coco_ssn, get_coco_kp, get_coco
-# from coco_utils_joint_load import get_coco
+from datasets.joint_loader import get_coco
+from datasets.val_dataset_utils import get_coco_test, get_uvo_test, get_openimages_test, get_ade20k_test
 
 from group_by_aspect_ratio import GroupedBatchSampler, create_aspect_ratio_groups
-# from engine import train_one_epoch
-# from maskGeneric import train_one_epoch
-from maskEnd2End import train_one_epoch
-from genericEval import evaluate
+from train_one_epoch import train_one_epoch
+from evaluate import evaluate
 
 import presets
 import utils
@@ -46,9 +40,21 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def get_dataset(name, image_set, transform, data_path, toBinary, subset):
+def get_dataset(name, image_set, transform, data_path, toBinary, subset, spp):
     paths = {
         "coco": (data_path, get_coco, 2),
+    }
+    p, ds_fn, num_classes = paths[name]
+
+    ds = ds_fn(p, image_set=image_set, transforms=transform, toBinary=toBinary, subset=subset, spp=spp)
+    return ds
+
+def get_dataset_test(name, image_set, transform, data_path, toBinary, subset):
+    paths = {
+        "coco": (data_path, get_coco_test, 2),
+        "uvo": (data_path, get_uvo_test, 2),
+        "openimages" : (data_path, get_openimages_test, 2),
+        "ade20k" : (data_path, get_ade20k_test, 2),
     }
     p, ds_fn, num_classes = paths[name]
 
@@ -65,7 +71,7 @@ def get_args_parser(add_help=True):
     parser = argparse.ArgumentParser(description='PyTorch Detection Training', add_help=add_help)
 
     parser.add_argument('--data-path', default='/datasets01/COCO/022719/', help='dataset')
-    parser.add_argument('--dataset', default='coco', help='dataset')
+    parser.add_argument('--dataset', default='coco', choices=["uvo","coco","openimages","ade20k"], help='dataset')
     parser.add_argument('--model', default='maskrcnn_resnet50_fpn', help='model')
     parser.add_argument('--device', default='cuda', help='device')
     parser.add_argument('-b', '--batch-size', default=2, type=int,
@@ -89,26 +95,35 @@ def get_args_parser(add_help=True):
                         help='decrease lr every step-size epochs (multisteplr scheduler only)')
     parser.add_argument('--lr-gamma', default=0.1, type=float,
                         help='decrease lr by a factor of lr-gamma (multisteplr scheduler only)')
-    parser.add_argument('--print-freq', default=50, type=int, help='print frequency')
-    parser.add_argument('--output-dir', default='.', help='path where to save')
+    parser.add_argument('--print-freq', default=500, type=int, help='print frequency')
+    parser.add_argument('--output-dir', default='UDOS/', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, help='start epoch')
     parser.add_argument('--aspect-ratio-group-factor', default=3, type=int)
     parser.add_argument('--rpn-score-thresh', default=None, type=float, help='rpn score threshold for faster-rcnn')
-    parser.add_argument('--trainable-backbone-layers', default=None, type=int,
+    parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
-    parser.add_argument('--data-augmentation', default="hflip", help='data augmentation policy (default: hflip)')
-    parser.add_argument('--num-classes', type=int, default=91, help='Number of classes. 91 for CoCo, 2 for CAS')
+    parser.add_argument('--data-augmentation', default="hflip", 
+                                            help='data augmentation policy (default: hflip)')
+    parser.add_argument('--num-classes', type=int, default=2, 
+                                            help='Number of classes. 2 is default for class-agnostic segmentation.')
     parser.add_argument('--data-split-train', type=str, default="all", help='Which COCO split to use.',
                                                 choices=["all", "voc", "coco"])
     parser.add_argument('--data-split-test', type=str, default="all", help='Which COCO split to use.',
                                                 choices=["all", "voc", "coco"])
-    parser.add_argument('--sim_mode', type=str, help='sim mode in group loss',
-                                                choices=["binary_concat" , "binary_sum" , "contrastive" , "prototype"])
-    parser.add_argument('--thres', required=True, type=float)
-    parser.add_argument('--proj_layer', required=True, type=str, choices=["conv" , "mlp"])
-    parser.add_argument('--temp', type=float, default=0.07)
-    parser.add_argument('--glevels', type=int, default=0)
+    parser.add_argument('--delta', type=int, default=15)
+    # parser.add_argument('--thres', type=float, default=0.5)
+    parser.add_argument('--load_model', default='')
+    # parser.add_argument('--test_niter', type=int)
+    parser.add_argument('--lambda_2' , type=float)
+    parser.add_argument('--lambda_3' , type=float)
+    parser.add_argument('--first_stage_scoring',type=int,default=1,choices=[0,1])
+    parser.add_argument('--second_stage_scoring',type=int,default=1,choices=[0,1])
+    parser.add_argument('--spp', default="ss", choices=["ss","grid","mcg","ssn"])
+    # parser.add_argument('--pos', default=None, choices=["sine","grid","none"])
+    # parser.add_argument('--maskrcnn', default="false", choices=["true", "false"])
+    parser.add_argument('--detections', default=300, type=int)
+    parser.add_argument('--iou_overlap_thres', type=float, default=0.5)
 
     parser.add_argument(
         "--sync-bn",
@@ -147,7 +162,7 @@ def get_args_parser(add_help=True):
     return parser
 
 
-def main(args):
+def train(args):
     if args.output_dir:
         utils.mkdir(args.output_dir)
 
@@ -159,123 +174,82 @@ def main(args):
 
     device = torch.device(args.device)
 
-    # Data loading code
-    print("Loading data")
-
-    dataset = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),
-                                       args.data_path, args.toBinary, subset=args.data_split_train)
-    dataset_test  = get_dataset(args.dataset, "val", get_transform(False, args.data_augmentation), 
-                                       args.data_path, args.toBinary, subset=args.data_split_test)
-    
-    if args.toBinary:
-        assert args.num_classes == 2
-
-    print("Creating data loaders")
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
-        test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
+    if args.dataset == "coco":
+        args.shared = False
     else:
-        train_sampler = torch.utils.data.RandomSampler(dataset)
-        test_sampler = torch.utils.data.SequentialSampler(dataset_test)
-
-    if args.aspect_ratio_group_factor >= 0:
-        group_ids = create_aspect_ratio_groups(dataset, k=args.aspect_ratio_group_factor)
-        train_batch_sampler = GroupedBatchSampler(train_sampler, group_ids, args.batch_size)
-    else:
-        train_batch_sampler = torch.utils.data.BatchSampler(
-            train_sampler, args.batch_size, drop_last=True)
-
-    data_loader = torch.utils.data.DataLoader(
-        dataset, batch_sampler=train_batch_sampler, num_workers=args.workers,
-        collate_fn=utils.collate_fn)
-
-    data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=1,
-        sampler=test_sampler, num_workers=args.workers,
-        collate_fn=utils.collate_fn)
+        args.shared = True
 
     print("Creating model")
     kwargs = {
-        "trainable_backbone_layers": args.trainable_backbone_layers
+        "trainable_backbone_layers": args.trainable_backbone_layers,
+        "lambda_l2": args.lambda_2,
+        "lambda_l3": args.lambda_3,
+        "delta": args.delta,
+        "first_stage_scoring": args.first_stage_scoring,
+        "second_stage_scoring": args.second_stage_scoring,
+        "shared" : args.shared,
+        "iou_overlap" : args.iou_overlap_thres
     }
+
     if "rcnn" in args.model:
         if args.rpn_score_thresh is not None:
             kwargs["rpn_score_thresh"] = args.rpn_score_thresh
     
-    # if args.toBinary and args.test_only:
-    if args.test_only:
-        # kwargs["box_nms_thresh"] = 0.75
-        # kwargs["box_score_thresh"] = 0.
-        kwargs["box_detections_per_img"] = 100#1000
-    else:
-        kwargs["box_detections_per_img"] = 700
-        kwargs["rpn_pre_nms_top_n_train"] = 4000
-        kwargs["rpn_post_nms_top_n_train"] = 4000
+    
+    kwargs["box_detections_per_img"] = args.detections
+    kwargs["box_score_thresh"] = 0.0
+    
 
     model = models.__dict__[args.model](num_classes=args.num_classes, pretrained=args.pretrained, **kwargs)
     model.to(device)
 
-    # if args.resume:
-    #     checkpoint = torch.load(args.resume, map_location='cpu')
-    #     model.load_state_dict(checkpoint['model'])
-    #     print("Resuming from checkpoint ...")
-
-    try:
-        backbone = copy.deepcopy(model.module.backbone)
-        roi_pool = model.module.roi_heads.mask_roi_pool
-    except:
-        backbone = copy.deepcopy(model.backbone)
-        roi_pool = model.roi_heads.mask_roi_pool
-
-    # if args.sim_mode == "binary_concat":
-    #     projection = ProjectionLinear(output_dim*2)
-    #     args.proj_layer = "mlp"
-    # elif args.sim_mode == "binary_sum":
-    #     # projection = ProjectionLinear(output_dim)
-    #     projection = MaskEmbeddings(backbone, roiAlign=roi_pool, pos_encoding=True)
-    #     args.proj_layer = "mlp"
-    # elif args.sim_mode == "contrastive" or args.sim_mode == "prototype":
-    #     if args.proj_layer == "conv":
-    #         # projection = ProjectionConv(256,[256,256])
-    #         projection = MaskEmbeddings(backbone, roiAlign=roi_pool)
-    #     elif args.proj_layer == "mlp":
-    #         # projection = ProjectionLinearEmbedding(output_dim)
-    #         projection = MaskEmbeddings()
-    #     else:
-    #         raise NotImplementedError
-    # else:
-    #     raise NotImplementedError
-    projection = MaskEmbeddings(backbone, roiAlign=roi_pool)
-
-    projection.to(device)
     if args.distributed and args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     model_without_ddp = model
-    projection_without_ddp = projection
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
-        projection = torch.nn.parallel.DistributedDataParallel(projection, device_ids=[args.gpu])
-        projection_without_ddp = projection.module
-
-    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(
-        params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        optimizer_params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    projection_params = [p for p in projection.parameters() if p.requires_grad]
-    projection_optimizer = torch.optim.SGD(
-        projection_params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    # projection_optimizer = torch.optim.Adam(
-    #     projection_params, lr=args.lr, weight_decay=args.weight_decay)
-    
+
+    # Data loading code
+    print("Loading data")
+
+    if not args.test_only:
+        dataset = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),
+                                        args.data_path, args.toBinary, subset=args.data_split_train, spp=args.spp)
+        
+        if args.toBinary:
+            assert args.num_classes == 2
+
+        print("Creating data loaders")
+        if args.distributed:
+            train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        else:
+            train_sampler = torch.utils.data.RandomSampler(dataset)
+
+        if args.aspect_ratio_group_factor >= 0:
+            group_ids = create_aspect_ratio_groups(dataset, k=args.aspect_ratio_group_factor)
+            train_batch_sampler = GroupedBatchSampler(train_sampler, group_ids, args.batch_size)
+        else:
+            train_batch_sampler = torch.utils.data.BatchSampler(
+                train_sampler, args.batch_size, drop_last=True)
+
+        data_loader = torch.utils.data.DataLoader(
+            dataset, batch_sampler=train_batch_sampler, num_workers=args.workers,
+            collate_fn=utils.collate_fn)
+        
 
     args.lr_scheduler = args.lr_scheduler.lower()
+
     if args.lr_scheduler == 'multisteplr':
-        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(projection_optimizer, milestones=args.lr_steps, gamma=args.lr_gamma)
+        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_steps, gamma=args.lr_gamma)
     elif args.lr_scheduler == 'cosineannealinglr':
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(projection_optimizer, T_max=args.epochs)
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     else:
         raise RuntimeError("Invalid lr scheduler '{}'. Only MultiStepLR and CosineAnnealingLR "
                            "are supported.".format(args.lr_scheduler))
@@ -288,14 +262,15 @@ def main(args):
         model_without_ddp.load_state_dict(checkpoint['model'])
         print("Resuming from checkpoint ...")
         optimizer.load_state_dict(checkpoint['optimizer'])
-        if "projection" in checkpoint:
-            print("Loading projection networks")
-            projection_without_ddp.load_state_dict(checkpoint["projection"], strict=True)
-            projection_optimizer.load_state_dict(checkpoint['projection_optimizer'])
-            args.start_epoch = checkpoint["epoch"] + 1
+        args.start_epoch = checkpoint["epoch"] + 1
+
+    if args.load_model:
+        checkpoint = torch.load(args.load_model, map_location='cpu')
+        model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
+        print("Resuming from pretrained model ...")
 
     if args.test_only:
-        evaluate(model,projection, data_loader_test, device=device, toBinary=args.toBinary, thres=args.thres, glevels=args.glevels)
+        test(args, model)
         return 0
 
     print("Start training")
@@ -303,36 +278,63 @@ def main(args):
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
-        train_one_epoch(model, optimizer, projection, projection_optimizer, data_loader, device, epoch, args.print_freq, args)
-        # train_one_epoch(model, optimizer, data_loader, device, epoch, args.print_freq)
+        train_one_epoch(model, optimizer, data_loader, device, epoch, args.print_freq, args)
         lr_scheduler.step()
         if args.output_dir:
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
-
-                'projection': projection_without_ddp.state_dict(),
-                'projection_optimizer': projection_optimizer.state_dict(),
                 'args': args,
                 'epoch': epoch
             }
+
             utils.save_on_master(
                 checkpoint,
                 os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
+
             utils.save_on_master(
                 checkpoint,
                 os.path.join(args.output_dir, 'checkpoint.pth'))
 
-        # if epoch % 3 == 0 or epoch == args.epochs-1:
-        #     # evaluate after every epoch
-        #     evaluate(model, data_loader_test, device=device)
-
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+
+    test(args, model)
+
     print('Training time {}'.format(total_time_str))
 
+def test(args, model):
+
+    device = torch.device(args.device)
+
+    # Data loading code
+    print("Loading data")
+
+    dataset_test  = get_dataset_test(args.dataset, "val", presets.DetectionPresetEval(),
+                                       args.data_path, args.toBinary, subset=args.data_split_test)
+    
+    if args.toBinary:
+        assert args.num_classes == 2
+
+    print("Creating data loaders")
+    if args.distributed:
+        test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
+    else:
+        test_sampler = torch.utils.data.SequentialSampler(dataset_test)
+
+    data_loader_test = torch.utils.data.DataLoader(
+        dataset_test, batch_size=1, shuffle=False,
+        sampler=test_sampler, num_workers=args.workers,
+        collate_fn=utils.collate_fn)
+
+    evaluate(model, data_loader_test, device=device, args=args, toBinary=args.toBinary)
+    return 0
 
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
-    main(args)
+    train(args)
+
+# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset uvo --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model COCO.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train all --data-split-test all --toBinary --lambda_2 0. --lambda_3 3. --first_stage_scoring 1 --second_stage_scoring 1 --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/UVOdataset --test-only --detections 300
+
+# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset coco --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model VOC.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train voc --data-split-test coco --toBinary --lambda_2 0. --lambda_3 3. --first_stage_scoring 1 --second_stage_scoring 1 --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/COCO --detections 300 --test-only
