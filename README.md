@@ -8,11 +8,56 @@ UDOS (**U**p-**D**own **O**pen-world **S**egmentation) is a simple and efficient
 
 <center><img src="./assets/problemFig.png" width="90%"></center>
 
+## Results
+
+### Cross-category setting (VOC -> NonVOC)
+
+| Model      | AR100-Box | AR100-Mask |
+| ----------- | ----------- | -------  | 
+| LDET       | 30.9     | 26.7      |
+| OLN        | 32.5      | 26.9       |
+| GGN        | 31.6      | 28.7       |
+| UDOS [Ours]| **33.5**      | **31.6**       |
+
 ## Testing Pre-trained models
 
-You can download the pre-trained model trained on VOC classes [[here](https://drive.google.com/file/d/1qT5OrftlbWN0Zidq3R82L6-dV3CUi1TM/view?usp=sharing)] and on complete COCO dataset [[here](https://drive.google.com/file/d/1_NKAi1jTzYJQ11G1wzKuZUITMVHheled/view?usp=sharing)]
+#### Cross Category Setting: VOC to NonVOC 
+
+Download the pre-trained model from [[here](https://drive.google.com/file/d/1qT5OrftlbWN0Zidq3R82L6-dV3CUi1TM/view?usp=sharing)]. 
+
+Then run the inference as follows.
+
+```
+sh jobs/UDOS_test_VOC.sh
+```
+
+#### Cross Dataset Setting: COCO to UVO
+
+Firstly, download the UVO dataset from [[here](https://sites.google.com/view/unidentified-video-object/dataset?pli=1)]. Then, download the pre-trained model trained on complete COCO dataset from [[here](https://drive.google.com/file/d/1_NKAi1jTzYJQ11G1wzKuZUITMVHheled/view?usp=sharing)]. 
+
+After downloading the pre-trained models, you can run inference using the following script.
+
+```
+sh jobs/UDOS_test_COCO.sh
+```
 
 ## Training UDOS
+
+## Generating super-pixel segmentation.
+
+You can download the super-pixel segmentation from [[here](https://drive.google.com/file/d/125Wq4Kqw0Ev2pQFq3ZhiKMnMENBURJoX/view?usp=sharing)]. Alternatively, you can generate your own superpixel segmentation usng selective search as follows.
+
+```
+python -m torch.distributed.launch --nproc_per_node=8 --use_env genSS.py --split train --output_file instances_train2017_SS.json
+```
+
+With the generated/downloaded superpixels, you can use the scripts inside the `jobs/` folder to train the UDOS models. For example, to train the cross-category model, you can use
+
+```
+sh jobs/UDOS_train_VOC.sh
+```
+
+Cross-dataset can also be trained similarly, using `UDOS_train_COCO.sh`. The training should take less than a day on 8 GPUs.
 
 ## Citation
 

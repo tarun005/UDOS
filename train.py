@@ -112,18 +112,12 @@ def get_args_parser(add_help=True):
     parser.add_argument('--data-split-test', type=str, default="all", help='Which COCO split to use.',
                                                 choices=["all", "voc", "coco"])
     parser.add_argument('--delta', type=int, default=15)
-    # parser.add_argument('--thres', type=float, default=0.5)
     parser.add_argument('--load_model', default='')
-    # parser.add_argument('--test_niter', type=int)
-    parser.add_argument('--lambda_2' , type=float)
-    parser.add_argument('--lambda_3' , type=float)
-    parser.add_argument('--first_stage_scoring',type=int,default=1,choices=[0,1])
-    parser.add_argument('--second_stage_scoring',type=int,default=1,choices=[0,1])
-    parser.add_argument('--spp', default="ss", choices=["ss","grid","mcg","ssn"])
-    # parser.add_argument('--pos', default=None, choices=["sine","grid","none"])
-    # parser.add_argument('--maskrcnn', default="false", choices=["true", "false"])
+    parser.add_argument('--lamda' , type=float)
+    parser.add_argument('--spp', default="mcg", choices=["ss","grid","mcg","ssn"])
     parser.add_argument('--detections', default=300, type=int)
-    parser.add_argument('--iou_overlap_thres', type=float, default=0.5)
+    parser.add_argument('--shared', action="store_true")
+    parser.add_argument('--iou_overlap_thres', type=float, default=0.9)
 
     parser.add_argument(
         "--sync-bn",
@@ -174,19 +168,11 @@ def train(args):
 
     device = torch.device(args.device)
 
-    if args.dataset == "coco":
-        args.shared = False
-    else:
-        args.shared = True
-
     print("Creating model")
     kwargs = {
         "trainable_backbone_layers": args.trainable_backbone_layers,
-        "lambda_l2": args.lambda_2,
-        "lambda_l3": args.lambda_3,
+        "lamda": args.lamda,
         "delta": args.delta,
-        "first_stage_scoring": args.first_stage_scoring,
-        "second_stage_scoring": args.second_stage_scoring,
         "shared" : args.shared,
         "iou_overlap" : args.iou_overlap_thres
     }
@@ -195,10 +181,8 @@ def train(args):
         if args.rpn_score_thresh is not None:
             kwargs["rpn_score_thresh"] = args.rpn_score_thresh
     
-    
     kwargs["box_detections_per_img"] = args.detections
     kwargs["box_score_thresh"] = 0.0
-    
 
     model = models.__dict__[args.model](num_classes=args.num_classes, pretrained=args.pretrained, **kwargs)
     model.to(device)
@@ -335,6 +319,4 @@ if __name__ == "__main__":
     args = get_args_parser().parse_args()
     train(args)
 
-# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset uvo --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model COCO.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train all --data-split-test all --toBinary --lambda_2 0. --lambda_3 3. --first_stage_scoring 1 --second_stage_scoring 1 --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/UVOdataset --test-only --detections 300
-
-# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset coco --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model VOC.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train voc --data-split-test coco --toBinary --lambda_2 0. --lambda_3 3. --first_stage_scoring 1 --second_stage_scoring 1 --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/COCO --detections 300 --test-only
+# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset uvo --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model COCO.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train all --data-split-test all --toBinary --lamda 3. --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/UVOdataset --test-only --detections 300

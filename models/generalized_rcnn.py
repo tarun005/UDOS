@@ -128,7 +128,7 @@ class GeneralizedRCNN(nn.Module):
             losses.update(detector_losses)
             losses.update(proposal_losses)
             
-            detector_losses_s2 = {k+"_stage2":v*self.lambda_l3 for k,v in detector_losses_s2.items()}
+            detector_losses_s2 = {k+"_stage2":v*self.lamda for k,v in detector_losses_s2.items()}
             losses.update(detector_losses_s2)
         else:
             union = []

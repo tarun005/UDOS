@@ -179,7 +179,7 @@ class MaskRCNN(FasterRCNN):
                  ##Projection Parameters
                  delta=5,
                  ## Loss coeffecients
-                 lambda_l2 = 1., lambda_l3 = 1.,
+                 lamda = 1.,
                  ## Scoring params
                  first_stage_scoring=1, second_stage_scoring=1,
                  ## scoring arch.
@@ -240,8 +240,7 @@ class MaskRCNN(FasterRCNN):
         self.roi_heads.mask_score_predictor = score_predictor
         self.roi_heads.first_stage_scoring = first_stage_scoring
         self.roi_heads.second_stage_scoring = second_stage_scoring
-        self.lambda_l2 = lambda_l2
-        self.lambda_l3 = lambda_l3
+        self.lamda = lamda
         self.iou_overlap = iou_overlap
 
         if not shared:
