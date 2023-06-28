@@ -19,6 +19,8 @@ UDOS (**U**p-**D**own **O**pen-world **S**egmentation) is a simple and efficient
 | GGN        | 31.6      | 28.7       |
 | UDOS [Ours]| **33.5**      | **31.6**       |
 
+More results are provided in our [[project page](https://tarun005.github.io/UDOS/)].
+
 ## Testing Pre-trained models
 
 #### Cross Category Setting: VOC to NonVOC 
