@@ -70,5 +70,3 @@ if __name__ == "__main__":
         info["annotations"]= annotations
         with open(args.output_file , "w") as fh:
             json.dump(info, fh, indent=4)
-
-# python -m torch.distributed.launch --nproc_per_node=8 --use_env generateSSlabels.py --split train --output_file part_cropped_train2017.json
