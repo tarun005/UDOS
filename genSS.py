@@ -16,7 +16,6 @@ def get_parser():
     parser = argparse.ArgumentParser("Convert coco images to SS labels")
     parser.add_argument("--split", default="train")
     parser.add_argument("--root", default="/datasets01/COCO/022719/")
-    parser.add_argument("--input_file", required=True)
     parser.add_argument("--output_file", required=True)
     # distributed training parameters
     parser.add_argument('--world-size', default=1, type=int,
@@ -48,9 +47,6 @@ if __name__ == "__main__":
     maskId = 1
     annotations= []
 
-    with open(args.input_file) as fh:
-        all_image_ids = [int(ig.strip()) for ig in fh.readlines()]
-
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
@@ -61,8 +57,6 @@ if __name__ == "__main__":
 
         gt_masks = target[0]["masks"].squeeze(1)
 
-        if image_id not in all_image_ids:
-            continue;
         anno_part, maskId = ss.getMasks(img, maskId, image_id, dest="coco_ann")
         annotations.extend(anno_part)
 
