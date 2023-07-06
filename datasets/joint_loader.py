@@ -292,10 +292,10 @@ def get_coco(root, image_set, transforms, mode='instances', toBinary=False, subs
     anno_file_template = "{}_{}2017.json"
 
     if image_set == "train":
-        if os.path.exists(os.path.join(root, "annotations/instances_train2017_MCG.json")):
+        if os.path.exists(os.path.join(root, "annotations/instances_train2017_SS.json")):
             PATHS = {
                 "train_gt": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
-                "train_spp": ("train2017", os.path.join("annotations/instances_train2017_MCG.json")),
+                "train_spp": ("train2017", os.path.join("annotations/instances_train2017_SS.json")),
             }
         else:
             print("SuperPixel file not found.")
@@ -303,7 +303,7 @@ def get_coco(root, image_set, transforms, mode='instances', toBinary=False, subs
     else:
         PATHS = {
                     "train_gt": ("val2017", os.path.join("annotations", anno_file_template.format(mode, "val"))),
-                    "train_spp" : ("val2017", os.path.join("annotations/instances_val2017_MCG_complete.json")),
+                    "train_spp" : ("val2017", os.path.join("annotations/instances_val2017_SS_complete.json")),
                 }
 
 

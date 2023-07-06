@@ -318,5 +318,3 @@ def test(args, model):
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
     train(args)
-
-# python3 -m torch.distributed.launch --nproc_per_node=8 --use_env train.py --dataset uvo --model maskrcnn_resnet50_fpn --epochs 8 --lr-steps 6 7 --load_model COCO.pth --num-classes 2 --lr 0.02 --b 2 --data-split-train all --data-split-test all --toBinary --lamda 3. --spp mcg --delta 10 --data-path /newfoundland2/tarun/datasets/UVOdataset --test-only --detections 300
