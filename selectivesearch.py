@@ -19,7 +19,7 @@ from itertools import groupby
 
 # "Selective Search for Object Recognition" by J.R.R. Uijlings et al.
 #
-#  - Modified version with LBP extractor for texture vectorization
+#  - Modified version from https://github.com/AlpacaTechJP/selectivesearch/blob/develop/selectivesearch/selectivesearch.py
 
 
 def _generate_segments(im_orig, scale, sigma, min_size):
